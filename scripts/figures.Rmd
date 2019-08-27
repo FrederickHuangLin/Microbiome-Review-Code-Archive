@@ -43,7 +43,7 @@ otu_absolute = abundances(pseq)
 otu_relative = abundances(pseq, "compositional")
 ```
 
-# 2. Fig. 1
+# 2. Fig. 2
 
 Alpha diversities
 
@@ -61,11 +61,11 @@ p = ggpairs(p_df, aes(alpha = 0.4))
 
 ```{r, message=FALSE, warning=FALSE, comment=NA}
 p
-ggsave("../figures/Figure 1.pdf", width=7, height=7, units='in')
-ggsave("../figures/Figure 1.jpeg", width=7, height=7, units='in', dpi = 300)
+ggsave("../figures/Figure 2.pdf", width=7, height=7, units='in')
+ggsave("../figures/Figure 2.jpeg", width=7, height=7, units='in', dpi = 300)
 ```
 
-# 3. Fig. 2
+# 3. Fig. 3
 
 Beta diversities
 
@@ -113,11 +113,11 @@ p = ggplot(p_df, aes(Axis.1, Axis.2, color=nationality)) +
 
 ```{r, message=FALSE, warning=FALSE, comment=NA}
 p
-ggsave("../figures/Figure 2.pdf", width=6.25, height=5, units='in')
-ggsave("../figures/Figure 2.jpeg", width=6.25, height=5, units='in', dpi = 300)
+ggsave("../figures/Figure 3.pdf", width=6.25, height=5, units='in')
+ggsave("../figures/Figure 3.jpeg", width=6.25, height=5, units='in', dpi = 300)
 ```
 
-# 4. Fig. 3
+# 4. Fig. 4
 
 Rarefaction curve
 
@@ -179,11 +179,11 @@ p = ggplot(data = p_df,
 
 ```{r, message=FALSE, warning=FALSE, comment=NA}
 p
-ggsave("../figures/Figure 3.pdf", width=6.25, height=5, units='in')
-ggsave("../figures/Figure 3.jpeg", width=6.25, height=5, units='in', dpi = 300)
+ggsave("../figures/Figure 4.pdf", width=6.25, height=5, units='in')
+ggsave("../figures/Figure 4.jpeg", width=6.25, height=5, units='in', dpi = 300)
 ```
 
-# 5. Fig. 4
+# 5. Fig. 5
 
 FDR and power plot
 
@@ -211,7 +211,7 @@ simparamslabels = c("n_taxa", "n_samp_grp1", "n_samp_grp2", "prop_diff", "abn_se
 
 # Read in original data
 dat_ancom_bc = read_csv("../data/fdr_power_ancom_bc.csv")
-dat_ancom = read_csv("../data/fdr_power_ancom_bc.csv")
+dat_ancom = read_csv("../data/fdr_power_ancom.csv")
 dat_deseq2 = read_csv("../data/fdr_power_deseq2.csv")
 dat_edger = read_csv("../data/fdr_power_edger.csv")
 dat_zilg = read_csv("../data/fdr_power_zilg.csv")
@@ -268,8 +268,8 @@ p = ggplot(dat_fig, aes(x = prop_diff, y = FDR, fill = method)) +
         legend.position = "bottom")+
   guides(fill = guide_legend(nrow = 2, byrow = TRUE))
 ggarrange(p, labels = "a")
-ggsave("../figures/Figure 4a.pdf", width=6.25, height=5, units='in')
-ggsave("../figures/Figure 4a.jpeg", width=6.25, height=5, units='in', dpi = 300)
+ggsave("../figures/Figure 5a.pdf", width=6.25, height=5, units='in')
+ggsave("../figures/Figure 5a.jpeg", width=6.25, height=5, units='in', dpi = 300)
 
 p = ggplot(dat_fig, aes(x = prop_diff, y = power, fill = method)) +
   scale_y_continuous(breaks = seq(0.2, 1, 0.2), limits = c(0, 1))+
@@ -285,8 +285,8 @@ p = ggplot(dat_fig, aes(x = prop_diff, y = power, fill = method)) +
         legend.position = "bottom")+
   guides(fill = guide_legend(nrow = 2, byrow = TRUE))
 ggarrange(p, labels = "b")
-ggsave("../figures/Figure 4b.pdf", width=6.25, height=5, units='in')
-ggsave("../figures/Figure 4b.jpeg", width=6.25, height=5, units='in', dpi = 300)
+ggsave("../figures/Figure 5b.pdf", width=6.25, height=5, units='in')
+ggsave("../figures/Figure 5b.jpeg", width=6.25, height=5, units='in', dpi = 300)
 ```
 
 
