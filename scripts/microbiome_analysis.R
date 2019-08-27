@@ -1,0 +1,242 @@
+# library(devtools) # Load the devtools package
+# install_github("microbiome/microbiome") # Install the package
+library(microbiome)
+library(tidyverse)
+library(ape)
+library(ggpubr)
+
+data(dietswap)
+pseq = dietswap
+n_taxa = ntaxa(pseq)
+n_samp = nsamples(pseq)
+# Metadata
+meta_data = meta(pseq)
+# Taxonomy table
+taxonomy = tax_table(pseq)
+# Phylogenetic tree
+random_tree = rtree(n = n_taxa, rooted = TRUE, tip.label = taxa(pseq))
+# plot(random_tree)
+pseq = merge_phyloseq(pseq, random_tree)
+pseq
+# Absolute abundances
+otu_absolute = abundances(pseq)
+# Relative abundances
+otu_relative = abundances(pseq, "compositional")
+
+#=====Alpha diversities=====
+alpha_tab = alpha(pseq, index = "all")
+# To get PD
+library(picante)
+alpha_tab$pd = pd(samp = t(otu_absolute), tree = random_tree)$PD
+p_df = alpha_tab%>%select(observed, chao1, diversity_shannon, diversity_gini_simpson, pd)
+colnames(p_df) = c("Observed Species", "Chao1", "Shannon's Diversity", "Simpson's Diversity", "PD")
+
+library(GGally)
+p = ggpairs(p_df, aes(alpha = 0.4))
+p
+ggsave("figures/alpha_corr.pdf", width=7, height=7, units='in')
+ggsave("figures/alpha_corr.jpeg", width=7, height=7, units='in', dpi = 300)
+
+#=====Beta diversities=====
+set.seed(1234)
+pseq_rarified = rarefy_even_depth(pseq)
+
+# unlist(distanceMethodList)
+dist_methods = c("bray", "jaccard", "unifrac", "wunifrac")
+plist = vector("list", length(dist_methods))
+names(plist) = dist_methods
+for(i in dist_methods){
+  # Calculate distance matrix
+  iDist = distance(pseq_rarified, method = i)
+  # Calculate ordination
+  iMDS  = ordinate(pseq_rarified, "MDS", distance = iDist)
+  ## Make plot
+  # Don't carry over previous plot (if error, p will be blank)
+  p = NULL
+  # Create plot, store as temp variable, p
+  p = plot_ordination(pseq_rarified, iMDS, color = "nationality")
+  # Save the graphic to file.
+  plist[[i]] = p
+}
+
+p_df = plist%>%map_dfr(function(x) x$data, .id = "distance")
+p_df$distance = recode(p_df$distance, 
+                       bray = "Bray-Curtis", 
+                       jaccard = "Jaccard", 
+                       unifrac = "Unweighted UniFrac", 
+                       wunifrac = "Weighted UniFrac")
+p_df$nationality = recode(p_df$nationality,
+                          AAM = "African American",
+                          AFR = "Native African")
+p = ggplot(p_df, aes(Axis.1, Axis.2, color=nationality)) + 
+  geom_point(size=3, alpha=0.5) + 
+  labs(x = "Coordinate 1", y = "Coordinate 2") + 
+  scale_color_discrete(name = NULL)+
+  facet_wrap(~distance, scales="free") + 
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5),
+        strip.background = element_rect(fill = "white"),
+        legend.position = "top")
+p
+ggsave("figures/beta_pcoa.pdf", width=6.25, height=5, units='in')
+ggsave("figures/beta_pcoa.jpeg", width=6.25, height=5, units='in', dpi = 300)
+
+
+#=====Rarefaction curve=====
+# Calculate alpha diversity
+calculate_rarefaction_curves = function(psdata, measures, depths) {
+  estimate_rarified_richness = function(psdata, measures, depth) {
+    if(max(sample_sums(psdata)) < depth) return()
+    
+    psdata = prune_samples(sample_sums(psdata) >= depth, psdata)
+    rarified_psdata = rarefy_even_depth(psdata, depth, verbose = FALSE)
+    alpha_diversity = alpha(rarified_psdata, index = measures)
+    molten_alpha_diversity = alpha_diversity%>%rownames_to_column("sample")%>%
+      gather(key = "measure", value = "alpha_diversity", -sample)
+    return(molten_alpha_diversity)
+  }
+  
+  names(depths) = depths
+  rarefaction_curve_data = depths%>%map_dfr(function(x)
+    estimate_rarified_richness(psdata = psdata, measures = measures, depth = x), .id = "depth")
+  
+  return(rarefaction_curve_data)
+}
+
+rarefaction_curve_data = calculate_rarefaction_curves(psdata = pseq, 
+                                                      measures = c("chao1", "diversity_shannon"), 
+                                                      depths = rep(round(seq(1, max(sample_sums(pseq)), length.out = 20)), 
+                                                                   each = 10))
+rarefaction_curve_data$depth = as.numeric(rarefaction_curve_data$depth)
+# Summarize alpha diversity
+rarefaction_curve_data_summary = rarefaction_curve_data%>%group_by(depth, sample, measure)%>%
+  summarise(alpha_diversity_mean = mean(alpha_diversity), alpha_diversity_sd = sd(alpha_diversity))
+
+# Add sample data
+p_df = rarefaction_curve_data_summary%>%left_join(meta_data, by = "sample")
+
+# Plot
+p_df$measure = recode(p_df$measure, 
+                      chao1 = "Chao1", 
+                      diversity_shannon = "Shannon's Diversity")
+p_df$nationality = recode(p_df$nationality,
+                          AAM = "African American",
+                          AFR = "Native African")
+p = ggplot(data = p_df,
+           aes(x = depth, y = alpha_diversity_mean,
+               ymin = alpha_diversity_mean - alpha_diversity_sd,
+               ymax = alpha_diversity_mean + alpha_diversity_sd,
+               color = nationality,
+               group = sample)) + 
+  labs(x = "Library Size", y = "Diversity") + 
+  scale_color_discrete(name = NULL) +
+  geom_line() + geom_pointrange(alpha = 0.5) + 
+  facet_wrap(facets = ~ measure, scales = 'free_y') + 
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5),
+        strip.background = element_rect(fill = "white"),
+        legend.position = "top")
+p
+ggsave("figures/rarefy.pdf", width=6.25, height=5, units='in')
+ggsave("figures/rarefy.jpeg", width=6.25, height=5, units='in', dpi = 300)
+
+#=====FDR and power plot=====
+# Simulation settings
+# The number of taxa, sampling depth, and sample size
+n_taxa = 1000; n_samp = c("20_30", "50_50")
+
+# The proportion of differentially abundant taxa
+prop_diff = c(0.05, 0.15, 0.25)
+
+# Set seeds
+iterNum = 100
+abn_seed = seq(iterNum)
+
+# Define the simulation parameters combinations
+simparams = expand.grid(n_taxa, n_samp, prop_diff, abn_seed)
+colnames(simparams) = c("n_taxa", "n_samp", "prop_diff", "abn_seed")
+simparams = simparams%>%mutate(obs_seed = abn_seed+1)
+simparams = simparams%>%separate(col = n_samp, into = c("n_samp_grp1", "n_samp_grp2"), sep = "_")
+simparams = simparams%>%arrange(n_taxa, n_samp_grp1, prop_diff, abn_seed, obs_seed)
+simparams_list = apply(simparams, 1, paste0, collapse = "_")
+
+simparamslabels = c("n_taxa", "n_samp_grp1", "n_samp_grp2", "prop_diff", "abn_seed", "obs_seed")
+
+# Read in original data
+dat_ancom_bc = read_csv("data/fdr_power_ancom_bc.csv")
+dat_ancom = read_csv("data/fdr_power_ancom_bc.csv")
+dat_deseq2 = read_csv("data/fdr_power_deseq2.csv")
+dat_edger = read_csv("data/fdr_power_edger.csv")
+dat_zilg = read_csv("data/fdr_power_zilg.csv")
+dat_zig = read_csv("data/fdr_power_zig.csv")
+dat_wilcox_un = read_csv("data/fdr_power_wilcox_un.csv")
+dat_wilcox_tss = read_csv("data/fdr_power_wilcox_tss.csv")
+
+# Reshaping data
+simpattern = distinct(simparams, n_taxa, n_samp_grp1, n_samp_grp2, prop_diff)
+
+data_summary = function(eval_data, method){
+  FDR = tapply(as.numeric(eval_data[1, ]), 
+             rep(seq(nrow(simpattern)), each = iterNum), function(x) mean(x, na.rm = T))
+  FDRSD = tapply(as.numeric(eval_data[1, ]), 
+               rep(seq(nrow(simpattern)), each = iterNum), function(x) sd(x, na.rm = T))
+  power = tapply(as.numeric(eval_data[2, ]), 
+               rep(seq(nrow(simpattern)), each = iterNum), function(x) mean(x, na.rm = T))
+  powerSD = tapply(as.numeric(eval_data[2, ]), 
+                 rep(seq(nrow(simpattern)), each = iterNum), function(x) sd(x, na.rm = T))
+  data_sum = data.frame(FDR, FDRSD, power, powerSD, simpattern, method)
+  data_sum = data_sum%>%unite(n_samp_grp, n_samp_grp1, n_samp_grp2, sep = ", ")
+  
+  return(data_sum)
+}
+
+eval_dat_list = list(dat_ancom_bc, dat_ancom, dat_deseq2, dat_edger, 
+                     dat_zilg, dat_zig, dat_wilcox_un, dat_wilcox_tss)
+method_list = list("ANCOM-BC", "ANCOM", "DESeq2", "edgeR", "ZILG", "ZIG", "Wilcoxon", "Wilcoxon + TSS")
+
+dat_fig_list = vector(mode = "list", length = length(eval_dat_list))
+for (i in 1:length(eval_dat_list)) {
+  dat_fig_list[[i]] = data_summary(eval_dat_list[[i]], method_list[[i]])
+}
+
+# Merge data
+dat_fig = Reduce('rbind', dat_fig_list)
+dat_fig$n_samp_grp = factor(dat_fig$n_samp_grp)
+levels(dat_fig$n_samp_grp) = c("n = 20/30", "n = 50/50")
+dat_fig$method = factor(dat_fig$method)
+dat_fig$prop_diff = factor(dat_fig$prop_diff)
+
+p = ggplot(dat_fig, aes(x = prop_diff, y = FDR, fill = method)) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "black", size = 0.2)+
+  scale_y_continuous(breaks = c(0.05, seq(0.2, 1, 0.2)), limits = c(0, 0.8))+
+  coord_flip()+facet_grid(.~ n_samp_grp)+
+  geom_bar(stat = "identity", position = position_dodge())+
+  labs(x = "Proportion of Differentially Abundant Taxa", y = "", fill = NULL, title = "FDR")+
+  scale_fill_brewer(palette = "Dark2")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        strip.background = element_rect(fill = "white"),
+        legend.position = "bottom")+
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+ggarrange(p, labels = "a")
+ggsave("figures/fdr.pdf", width=6.25, height=5, units='in')
+ggsave("figures/fdr.jpeg", width=6.25, height=5, units='in', dpi = 300)
+
+p = ggplot(dat_fig, aes(x = prop_diff, y = power, fill = method)) +
+  scale_y_continuous(breaks = seq(0.2, 1, 0.2), limits = c(0, 1))+
+  coord_flip()+facet_grid(.~ n_samp_grp)+
+  geom_bar(stat = "identity", position = position_dodge())+
+  labs(x = "Proportion of Differentially Abundant Taxa", y = "", fill = NULL, title = "Power")+
+  scale_fill_brewer(palette = "Dark2")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        strip.background = element_rect(fill = "white"),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "bottom")+
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+ggarrange(p, labels = "b")
+ggsave("figures/power.pdf", width=6.25, height=5, units='in')
+ggsave("figures/power.jpeg", width=6.25, height=5, units='in', dpi = 300)
