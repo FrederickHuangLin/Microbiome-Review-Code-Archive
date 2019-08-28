@@ -5,8 +5,8 @@ library(dplyr)
 # Data Pre-Processing
 feature_table_pre_process = function(feature_table, meta_data, sample_var, group_var, 
                                      zero_cut, lib_cut, neg_lb){
-  feature_table = data.frame(feature_table)
-  meta_data = data.frame(meta_data)
+  feature_table = data.frame(feature_table, check.names = FALSE)
+  meta_data = data.frame(meta_data, check.names = FALSE)
   # Drop unused levels
   meta_data[] = lapply(meta_data, function(x) if(is.factor(x)) factor(x) else x)
   
@@ -292,7 +292,7 @@ ANCOM_BC = function(feature_table, grp_name, grp_ind, struc_zero, adj_method,
   }
   
   ## 3_3 Combine results together
-  res = data_frame(W_numerator = Inf, se = 0, W = Inf, 
+  res = data.frame(W_numerator = Inf, se = 0, W = Inf, 
                    p_val = rep(0, n_taxa_origin), q_val = rep(0, n_taxa_origin))
   res[info_taxa_pos, ] = res_nonstrc_zero
   res[-info_taxa_pos, ] = res_strc_zero
