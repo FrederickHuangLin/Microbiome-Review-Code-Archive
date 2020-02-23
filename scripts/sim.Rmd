@@ -1,0 +1,247 @@
+---
+title: "Illustration Using Simulations"
+author: "Huang Lin"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA)
+
+library(tidyverse)
+library(DT)
+options(DT.options = list(
+  initComplete = JS("function(settings, json) {",
+  "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});","}")))
+
+source("data_generation.R")
+source("ancom_bc_v2.0.R")
+source("ancom_v2.1.R")
+
+gg_color_hue=function(n){
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+```
+
+# 1. Normalization efficacy
+
+```{r}
+# Simulated dataset
+n_taxa = 200; n_samp = 90
+x = data.frame(group = paste0("G", rep(1:3, each = n_samp/3))); type = "simple"; group = "group"
+prop_diff = 0.25; abn_seed = 12; obs_seed = 13; zero_prop = 0; depth = "large"
+test_dat = abn_tab_gen(n_taxa, n_samp, x, type, group, prop_diff, 
+                       abn_seed, obs_seed, zero_prop, depth)
+obs_abn = test_dat$obs_abn
+d_true = log(test_dat$samp_frac)
+
+# Metadata
+meta_data = data.frame(sample_id = paste0("sample", seq(n_samp)), x)
+
+# ANCOM-BC
+feature_table = obs_abn; sample_id = "sample_id"; adj_formula = "group"; p_adj_method = "holm"
+zero_cut = 0.90; lib_cut = 0; struc_zero = TRUE; neg_lb = FALSE; group = "group"
+tol = 1e-5; max_iter = 100; conserve = FALSE; alpha = 0.05; per_num = 1000
+global = FALSE; direct = FALSE; dunnett = FALSE; pattern = NULL
+
+out = ANCOM_BC(feature_table, meta_data, sample_id, adj_formula, p_adj_method, 
+               zero_cut, lib_cut, struc_zero, neg_lb, group, 
+               tol, max_iter, conserve, alpha, per_num, 
+               global, direct, dunnett, pattern)
+d_ancom_bc = out$samp_frac
+  
+countdata = test_dat$obs_abn
+zero_hreshold = 0.90
+taxa_zero_ind = apply(countdata, 1, function(x) sum(x == 0)/ncol(countdata))
+countdata = countdata[which(taxa_zero_ind < zero_hreshold), ] + 1L
+
+# UQ: Upper quartile normalization
+groupdata = factor(meta_data$group)
+dds = edgeR::DGEList(counts = countdata, group = groupdata)
+dds = edgeR::calcNormFactors(dds, method = "upperquartile")
+d_uq1 = dds$samples$norm.factors*colSums(countdata, na.rm = TRUE); d_uq1 = log(d_uq1)
+d_uq2 = dds$samples$norm.factors; d_uq2 = log(d_uq2)
+
+# TMM: Trimed mean of m-values
+dds = edgeR::DGEList(counts = countdata, group = groupdata)
+dds = edgeR::calcNormFactors(dds, method = "TMM")
+d_tmm1 = dds$samples$norm.factors*colSums(countdata, na.rm = TRUE); d_tmm1 = log(d_tmm1)
+d_tmm2 = dds$samples$norm.factors; d_tmm2 = log(d_tmm2)
+
+# CSS: Cumulative-sum scaling
+rownames(meta_data) = meta_data$sample_id
+phenotypeData = Biobase::AnnotatedDataFrame(meta_data)
+obj = metagenomeSeq::newMRexperiment(countdata, phenoData = phenotypeData, featureData = NULL)
+# Calculating normalization factors
+p = metagenomeSeq::cumNormStatFast(obj)
+obj = metagenomeSeq::cumNorm(obj, p = p)
+d_css = metagenomeSeq::normFactors(obj); d_css = log(d_css)
+
+# MED: Median normalization
+count_table = DESeq2::DESeqDataSetFromMatrix(countData = countdata, 
+                                             colData = meta_data, design  = ~ group)
+dds <- try(DESeq2::DESeq(count_table, quiet = TRUE), silent = TRUE)
+if (inherits(dds, "try-error")){
+  dds = DESeq2::DESeq(count_table, fit = "mean", quiet = TRUE)
+}
+d_med = DESeq2::sizeFactors(dds)
+d_med = log(d_med)
+
+# TSS: Total-sum scaling
+d_tss = colSums(countdata, na.rm = TRUE); d_tss = log(d_tss)
+
+norm_df = data.frame(d_true, d_ancom_bc, d_uq1, d_uq2, d_tmm1, d_tmm2, d_css, d_med, d_tss,
+                     group = meta_data$group)
+norm_df = norm_df%>% mutate(diff_ancom_bc = scale(d_true - d_ancom_bc, scale = FALSE),
+                            diff_uq1 = scale(d_true - d_uq1, scale = FALSE),
+                            diff_uq2 = scale(d_true - d_uq2, scale = FALSE),
+                            diff_tmm1 = scale(d_true - d_tmm1, scale = FALSE),
+                            diff_tmm2 = scale(d_true - d_tmm2, scale = FALSE),
+                            diff_css = scale(d_true - d_css, scale = FALSE),
+                            diff_med = scale(d_true - d_med, scale = FALSE),
+                            diff_css = scale(d_true - d_css, scale = FALSE),
+                            diff_tss = scale(d_true - d_tss, scale = FALSE))
+
+# Making plot
+p_df = norm_df %>% gather(key = "method", value = "value", diff_ancom_bc:diff_tss)
+p_df$method = factor(p_df$method, 
+                     levels = c("diff_ancom_bc", "diff_uq1", "diff_tmm1", 
+                                "diff_css", "diff_med", "diff_uq2", "diff_tmm2", "diff_tss"))
+p_df$group = factor(p_df$group)
+norm_var = p_df %>% group_by(method) %>% 
+  summarise(method_var = signif(var(value), 2))%>%
+  mutate(method_abb = c("ANCOM-BC", "ELib-UQ", "ELib-TMM", "CSS", "MED", "UQ", "TMM", "TSS"),
+         label = paste0(method_abb, " (", method_var, ")"))
+p = ggplot(p_df, aes(x = method, y = value, fill = method))+ 
+  geom_boxplot() + geom_hline(yintercept = 0, linetype = "dotted") +
+  geom_jitter(color = "gray28", position = position_jitter(0.2), aes(shape = group), size = 1) +
+  scale_fill_manual(name = NULL,
+                    label = norm_var$label,
+                    values = gg_color_hue(8))+
+  scale_shape_manual(name = NULL, values = c(1, 4, 17))+
+  labs(x = NULL, y = "Centered Residual") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.x = element_blank(),
+        legend.position = "bottom",
+        legend.direction = "horizontal", legend.box = "vertical")
+p
+ggsave("../figures/sim_norm.jpeg", width = 9, height = 6, units = 'in', dpi = 300)
+ggsave("../figures/sim_norm.pdf", width = 9, height = 6, units = 'in')
+```
+
+# 2. FDR and power
+
+## 2.1 Simulation settings
+
+```{r}
+n_taxa = 200; n_samp = 90
+x = data.frame(group = paste0("G", rep(1:3, each = n_samp/3))); type = "none"; group = "group"
+prop_diff = c(0.05, 0.15, 0.25); zero_prop = 0.2; depth = "small"
+meta_data = data.frame(sample_id = paste0("sample", seq(n_samp)), x)
+
+# Set seeds
+iterNum = 100
+abn_seed = seq(iterNum)
+
+# Define the simulation parameters
+simparams = expand.grid(prop_diff, abn_seed)
+colnames(simparams) = c("prop_diff", "abn_seed")
+simparams = simparams %>% mutate(obs_seed = abn_seed + 1)
+simparams_list = apply(simparams, 1, paste0, collapse = "_")
+simparamslabels = c("prop_diff", "abn_seed", "obs_seed")
+```
+
+## 2.2 Read in simulation results
+
+```{r}
+dat_ancom_bc = read_csv("../data/fdr_power/sim_fdr_power_ancom_bc.csv")
+dat_ancom = read_csv("../data/fdr_power/sim_fdr_power_ancom.csv")
+dat_deseq2 = read_csv("../data/fdr_power/sim_fdr_power_deseq2.csv")
+dat_edger = read_csv("../data/fdr_power/sim_fdr_power_edger.csv")
+dat_zilg = read_csv("../data/fdr_power/sim_fdr_power_zilg.csv")
+dat_zig = read_csv("../data/fdr_power/sim_fdr_power_zig.csv")
+dat_wilcox_un = read_csv("../data/fdr_power/sim_fdr_power_wilcox1.csv")
+dat_wilcox_tss = read_csv("../data/fdr_power/sim_fdr_power_wilcox2.csv")
+
+# Reshaping data
+simpattern = simparams %>% distinct(prop_diff)
+
+data_summary = function(eval_data, method){
+  FDR = tapply(as.numeric(eval_data[1, ]), 
+               rep(seq(nrow(simpattern)), each = iterNum), function(x) mean(x, na.rm = T))
+  FDRSD = tapply(as.numeric(eval_data[1, ]), 
+                 rep(seq(nrow(simpattern)), each = iterNum), function(x) sd(x, na.rm = T))
+  power = tapply(as.numeric(eval_data[2, ]), 
+                 rep(seq(nrow(simpattern)), each = iterNum), function(x) mean(x, na.rm = T))
+  powerSD = tapply(as.numeric(eval_data[2, ]), 
+                   rep(seq(nrow(simpattern)), each = iterNum), function(x) sd(x, na.rm = T))
+  data_sum = data.frame(FDR, FDRSD, power, powerSD, simpattern, method)
+  return(data_sum)
+}
+
+eval_dat_list = list(dat_ancom_bc, dat_ancom, dat_deseq2, dat_edger, 
+                     dat_zilg, dat_zig, dat_wilcox_un, dat_wilcox_tss)
+method_list = list("ANCOM-BC", "ANCOM", "DESeq2", "edgeR", "ZILG", "ZIG", 
+                   "Wilcoxon", "Wilcoxon + TSS")
+
+dat_fig_list = vector(mode = "list", length = length(eval_dat_list))
+for (i in 1:length(eval_dat_list)) {
+  dat_fig_list[[i]] = data_summary(eval_dat_list[[i]], method_list[[i]])
+}
+
+## Merge data
+dat_fig = Reduce('rbind', dat_fig_list)
+dat_fig$prop_diff = factor(dat_fig$prop_diff)
+dat_fig %>% datatable() %>% 
+  formatRound(columns = c("FDR", "FDRSD", "power", "powerSD"), digits=3)
+```
+
+## 2.3 Making plot
+
+```{r}
+dat_fig_long1 = dat_fig %>% 
+  transmute(measure = FDR, measureSD = FDRSD, prop_diff, method, label = "FDR")
+dat_fig_long2 = dat_fig %>% 
+  transmute(measure = power, measureSD = powerSD, prop_diff, method, label = "Power")
+dat_fig_long = rbind(dat_fig_long1, dat_fig_long2)
+
+p = ggplot(dat_fig_long, aes(x = prop_diff, y = measure, fill = method)) +
+  coord_flip() + facet_grid(.~label, scales = "free") +
+  geom_hline(data = data.frame(yint = 0.05, label = "FDR"), 
+             aes(yintercept = yint), linetype = "dashed") + 
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  labs(x = "Proportion of Differentially Abundant Taxa", y = NULL, fill = NULL) +
+  scale_fill_brewer(palette = "Set2")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        plot.title=element_text(hjust = 0.5),
+        strip.background = element_rect(fill = "white"),
+        legend.position = "bottom")+
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+p
+ggsave("../figures/sim_fdr_power.jpeg", width = 9, height = 6, units = 'in', dpi = 300)
+ggsave("../figures/sim_fdr_power.pdf", width = 9, height = 6, units = 'in')
+```
+
+# Session information
+
+```{r, message = FALSE, warning = FALSE, comment = NA}
+sessionInfo()
+devtools::session_info()
+```
+
+
+
+
+
+
+
+
+

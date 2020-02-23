@@ -1,94 +1,73 @@
 library(tidyverse)
+library(doParallel)
+library(foreach)
 
-# The number of taxa, sampling depth, and sample size
-n_taxa = 1000; n_samp = c("20_30", "50_50")
+detectCores()
+myCluster = makeCluster(4, type = "FORK")
+registerDoParallel(myCluster)
 
-# The proportion of differentially abundant taxa
-prop_diff = c(0.05, 0.15, 0.25)
+source("data_generation.R")
+source("ancom_bc_v2.0.R")
+
+n_taxa = 200; n_samp = 60
+x = data.frame(group = paste0("G", rep(1:2, each = n_samp/2))); type = "none"; group = "group"
+prop_diff = c(0.05, 0.15, 0.25); zero_prop = 0.2; depth = "small"
+meta_data = data.frame(sample_id = paste0("sample", seq(n_samp)), x)
 
 # Set seeds
 iterNum = 100
 abn_seed = seq(iterNum)
 
-# Define the simulation parameters combinations
-simparams = expand.grid(n_taxa, n_samp, prop_diff, abn_seed)
-colnames(simparams) = c("n_taxa", "n_samp", "prop_diff", "abn_seed")
-simparams = simparams%>%mutate(obs_seed = abn_seed + 1)
-simparams = simparams%>%separate(col = n_samp, into = c("n_samp_grp1", "n_samp_grp2"), sep = "_")
-simparams = simparams%>%arrange(n_taxa, n_samp_grp1, prop_diff, abn_seed, obs_seed)
+# Define the simulation parameters
+simparams = expand.grid(prop_diff, abn_seed)
+colnames(simparams) = c("prop_diff", "abn_seed")
+simparams = simparams %>% mutate(obs_seed = abn_seed + 1) %>% arrange(prop_diff, abn_seed, obs_seed)
 simparams_list = apply(simparams, 1, paste0, collapse = "_")
+simparamslabels = c("prop_diff", "abn_seed", "obs_seed")
 
-simparamslabels = c("n_taxa", "n_samp_grp1", "n_samp_grp2", "prop_diff", "abn_seed", "obs_seed")
-
-source("scripts/ancom_bc.R")
-source("scripts/data_generation.R")
-
-library(doParallel)
-library(foreach)
-
-detectCores()
-myCluster = makeCluster(2, type = "FORK")
-registerDoParallel(myCluster)
-
-start_time = Sys.time()
-simlist = foreach(i = simparams_list, .combine = 'cbind') %dopar% {
-  # i = simparams_list[1]
+simlist = foreach(i = simparams_list, .combine = 'cbind', 
+                  .packages = c("MASS", "nloptr", "CVXR")) %dopar% {
+  # i = simparams_list[[1]]
   print(i)
   params = strsplit(i, "_")[[1]]
   names(params) = simparamslabels
   
   # Paras for data generation
-  n_taxa = as.numeric(params["n_taxa"])
-  n_samp_grp1 = as.numeric(params["n_samp_grp1"])
-  n_samp_grp2 = as.numeric(params["n_samp_grp2"])
   prop_diff = as.numeric(params["prop_diff"])
   abn_seed = as.numeric(params["abn_seed"])
   obs_seed = as.numeric(params["obs_seed"])
   
   # Data generation
-  test_dat = abn_tab_gen(n_taxa, n_samp_grp1, n_samp_grp2, prop_diff, abn_seed, obs_seed,
-                         out_prop = 0.05)
+  test_dat = abn_tab_gen(n_taxa, n_samp, x, type, group, prop_diff,
+                         abn_seed, obs_seed, zero_prop, depth)
   obs_abn = test_dat$obs_abn
-  meta_data = cbind(Sample_ID = paste0("sub", seq(n_samp_grp1+n_samp_grp2)), 
-                    group = rep(c(1, 2), c(n_samp_grp1, n_samp_grp2)))
-  
-  # Pre-processing
-  feature_table = obs_abn; sample_var = "Sample_ID"; group_var = "group"; 
-  zero_cut = 0.90; lib_cut = 1000; neg_lb = FALSE
-  pre_process = feature_table_pre_process(feature_table, meta_data, sample_var, 
-                                          group_var, zero_cut, lib_cut, neg_lb)
-  feature_table = pre_process$feature_table
-  group_name = pre_process$group_name
-  group_ind = pre_process$group_ind
-  struc_zero = pre_process$structure_zeros
-  
-  # Paras for ANCOM-BC
-  grp_name = group_name; grp_ind = group_ind; adj_method = "bonferroni"
-  tol_EM = 1e-5; max_iterNum = 100; alpha = 0.05
   
   # Run ANCOM-BC
-  suppressWarnings(out <- try(ANCOM_BC(feature_table, grp_name, grp_ind, struc_zero,
-                                       adj_method, tol_EM, max_iterNum, alpha), 
-                              silent = TRUE))
+  feature_table = obs_abn; sample_id = "sample_id"; p_adj_method = "holm"
+  zero_cut = 0.90; lib_cut = 0; tol = 1e-5; max_iter = 100; conserve = FALSE
+  alpha = 0.05; per_num = 1000; adj_formula = "group"; struc_zero = TRUE; neg_lb = FALSE
+  global = FALSE; direct = FALSE; dunnett = FALSE; pattern = NULL
+  
+  suppressWarnings(out <- try(ANCOM_BC(feature_table, meta_data, sample_id, adj_formula,
+                                       p_adj_method, zero_cut, lib_cut, struc_zero, neg_lb, group, 
+                                       tol, max_iter, conserve, alpha, per_num, 
+                                       global, direct, dunnett, pattern), silent = TRUE))
+  
   if (inherits(out, "try-error")) {
     FDR = NA; power = NA
   }else{
-    res = cbind(out$res, diff_ind = test_dat$diff_taxa[rownames(out$feature_table)])
-    
-    # FDR
-    FDR = ifelse(sum(res$diff_abn, na.rm = T) == 0, 0, 
-                 sum(ifelse(res$diff_ind == 0&res$diff_abn, 1, 0), na.rm = T)/
-                   sum(res$diff_abn, na.rm = T))
-    
-    # Power
-    power = sum(ifelse(res$diff_ind!= 0&res$diff_abn, 1, 0), na.rm = T)/
-      sum(res$diff_ind!= 0, na.rm = T)
+    res_test = out$res$diff_abn[, 2] * 1
+    res_true = test_dat$diff_ind * 1
+    res_true[test_dat$zero_ind] = 1
+    res_true = res_true[rownames(out$feature_table)]
+    TP = sum(res_test[res_true == 1] == 1, na.rm = T)
+    FP = sum(res_test[res_true == 0] == 1, na.rm = T)
+    FN = sum(res_test[res_true == 1] == 0, na.rm = T)
+    FDR = FP/(TP + FP); power = TP/(TP + FN)
   }
   c(FDR, power)
 }
-end_time = Sys.time()
-end_time - start_time
 
 stopCluster(myCluster)
-simlist = data.frame(simlist)
-write_csv(simlist, "fdr_power_ancom_bc.csv")
+write_csv(data.frame(simlist), "sim_fdr_power_ancom_bc.csv")
+
