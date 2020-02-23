@@ -127,7 +127,7 @@ abn_tab_gen = function(n_taxa, n_samp, x, type = NULL, group = NULL, prop_diff,
   }else{
     depth = 1/sample(c(runif(n_samp, 10, 50), runif(n_samp, 100, 500)), n_samp, replace = T)
   }
-  lib_size = round(micro_load * depth)
+  lib_size = round(max(micro_load) * depth)
   names(lib_size) = paste0("sample", 1:n_samp)
   
   # Absolute abundance in the sample

@@ -15,6 +15,7 @@ library(DT)
 options(DT.options = list(
   initComplete = JS("function(settings, json) {",
   "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});","}")))
+library(facetscales)
 
 source("data_generation.R")
 source("ancom_bc_v2.0.R")
@@ -32,7 +33,7 @@ gg_color_hue=function(n){
 # Simulated dataset
 n_taxa = 200; n_samp = 90
 x = data.frame(group = paste0("G", rep(1:3, each = n_samp/3))); type = "simple"; group = "group"
-prop_diff = 0.25; abn_seed = 12; obs_seed = 13; zero_prop = 0; depth = "large"
+prop_diff = 0.25; abn_seed = 123; obs_seed = 124; zero_prop = 0; depth = "large"
 test_dat = abn_tab_gen(n_taxa, n_samp, x, type, group, prop_diff, 
                        abn_seed, obs_seed, zero_prop, depth)
 obs_abn = test_dat$obs_abn
@@ -199,7 +200,7 @@ for (i in 1:length(eval_dat_list)) {
 dat_fig = Reduce('rbind', dat_fig_list)
 dat_fig$prop_diff = factor(dat_fig$prop_diff)
 dat_fig %>% datatable() %>% 
-  formatRound(columns = c("FDR", "FDRSD", "power", "powerSD"), digits=3)
+  formatRound(columns = c("FDR", "FDRSD", "power", "powerSD"), digits = 3)
 ```
 
 ## 2.3 Making plot
@@ -210,9 +211,13 @@ dat_fig_long1 = dat_fig %>%
 dat_fig_long2 = dat_fig %>% 
   transmute(measure = power, measureSD = powerSD, prop_diff, method, label = "Power")
 dat_fig_long = rbind(dat_fig_long1, dat_fig_long2)
+scales_y = list(
+  `FDR` = scale_y_continuous(breaks = c(0.05, seq(0.2, 1, 0.2)), limits = c(0, 0.6)),
+  `Power` = scale_y_continuous(breaks = seq(0, 1, 0.2), limits = c(0, 1))
+)
 
 p = ggplot(dat_fig_long, aes(x = prop_diff, y = measure, fill = method)) +
-  coord_flip() + facet_grid(.~label, scales = "free") +
+  coord_flip() + facet_grid(.~ label, scales = "free") +
   geom_hline(data = data.frame(yint = 0.05, label = "FDR"), 
              aes(yintercept = yint), linetype = "dashed") + 
   geom_bar(stat = "identity", position = position_dodge(), color = "black") +
