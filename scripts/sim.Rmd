@@ -15,7 +15,6 @@ library(DT)
 options(DT.options = list(
   initComplete = JS("function(settings, json) {",
   "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});","}")))
-library(facetscales)
 
 source("data_generation.R")
 source("ancom_bc_v2.0.R")
