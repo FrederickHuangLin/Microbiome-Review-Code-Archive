@@ -109,11 +109,11 @@ norm_df = norm_df%>% mutate(diff_ancom_bc = scale(d_true - d_ancom_bc, scale = F
 p_df = norm_df %>% gather(key = "method", value = "value", diff_ancom_bc:diff_tss)
 p_df$method = factor(p_df$method, 
                      levels = c("diff_ancom_bc", "diff_uq1", "diff_tmm1", 
-                                "diff_css", "diff_med", "diff_uq2", "diff_tmm2", "diff_tss"))
+                                "diff_uq2", "diff_tmm2", "diff_css", "diff_med", "diff_tss"))
 p_df$group = factor(p_df$group)
 norm_var = p_df %>% group_by(method) %>% 
   summarise(method_var = signif(var(value), 2))%>%
-  mutate(method_abb = c("ANCOM-BC", "ELib-UQ", "ELib-TMM", "CSS", "MED", "UQ", "TMM", "TSS"),
+  mutate(method_abb = c("ANCOM-BC", "ELib-UQ", "ELib-TMM", "UQ", "TMM", "CSS", "MED", "TSS"),
          label = paste0(method_abb, " (", method_var, ")"))
 p = ggplot(p_df, aes(x = method, y = value, fill = method))+ 
   geom_boxplot() + geom_hline(yintercept = 0, linetype = "dotted") +

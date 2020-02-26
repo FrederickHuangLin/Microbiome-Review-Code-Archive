@@ -7,7 +7,8 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-rm(list = ls())
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA)
+
 library(microbiome)
 library(tidyverse)
 library(ape)
@@ -48,7 +49,7 @@ alpha_tab = alpha(pseq, index = "all")
 library(picante)
 alpha_tab$pd = pd(samp = t(otu_absolute), tree = random_tree)$PD
 p_df = alpha_tab%>%select(observed, chao1, diversity_shannon, diversity_gini_simpson, pd)
-colnames(p_df) = c("Observed Species", "Chao1", "Shannon's Diversity", "Simpson's Diversity", "PD")
+colnames(p_df) = c("Observed Species", "Chao1", "Shannon", "Gini-Simpson", "PD")
 
 library(GGally)
 p = ggpairs(p_df, aes(alpha = 0.4))
