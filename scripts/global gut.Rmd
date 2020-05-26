@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include = FALSE}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA)
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA, fig.width = 6.25, fig.height = 5)
 
 library(tidyverse)
 library(microbiome)
@@ -16,6 +16,7 @@ library(ggforce)
 library(limma)
 library(magrittr)
 library(qwraps2)
+library(phylofactor)
 library(caret)
 library(gbm)
 library(pROC)
@@ -48,7 +49,7 @@ meta_data$country = factor(meta_data$country, levels = c("MA", "US", "VEN"))
 meta_data$sex = factor(meta_data$sex, levels = c("female", "male"))
 meta_data$age_group = factor(meta_data$age_group, 
                              levels = c("Age \u2264 2 years old", "Age > 2 years old"))
-rownames(meta_data) = meta_data$sampleid # MANCOM-BC requires an id column
+rownames(meta_data) = meta_data$sampleid
 
 # Taxonomy
 tax = read_tsv("../data/global_gut_taxonomy.txt") %>% arrange(OTU_ID)
@@ -72,6 +73,8 @@ otu_data = subset_samples(otu_data, country %in% c("MA", "US"))
 
 # Aggregate to genus level
 genus_data = aggregate_taxa(otu_data, "Genus")
+
+genus_name = unlist(taxa_names(genus_data))
 # Subset samples
 genus_data1 = subset_samples(genus_data, age <= 2)
 genus_data2 = subset_samples(genus_data, age > 2)

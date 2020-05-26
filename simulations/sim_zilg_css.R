@@ -1,6 +1,7 @@
 library(tidyverse)
 library(doParallel)
 library(foreach)
+library(metagenomeSeq)
 
 source("data_generation.R")
 
@@ -20,7 +21,8 @@ simparams = simparams %>% mutate(obs_seed = abn_seed + 1) %>% arrange(prop_diff,
 simparams_list = apply(simparams, 1, paste0, collapse = "_")
 simparamslabels = c("prop_diff", "abn_seed", "obs_seed")
 
-simlist = foreach(i = simparams_list, .combine = 'cbind') %do% {
+simlist = foreach(i = simparams_list, .combine = 'cbind', 
+                  .packages = c("metagenomeSeq")) %do% {
   # i = simparams_list[[1]]
   print(i)
   params = strsplit(i, "_")[[1]]
@@ -42,22 +44,37 @@ simlist = foreach(i = simparams_list, .combine = 'cbind') %do% {
   zero_threshold = 0.90
   taxa_info_ind = apply(countdata, 1, function(x) sum(x == 0)/n_samp)
   feature_table = round(countdata[which(taxa_info_ind < zero_threshold), ]) + 1L
-  feature_table_scale = apply(feature_table, 2, function(x) x/sum(x))
   
-  # Run wilcoxon test
-  p_val = apply(feature_table_scale, 1, function(x) 
-    wilcox.test(x[1:(n_samp/2)], x[(n_samp/2 + 1):n_samp])$p.value)
-  FDR = p.adjust(p_val, method = "BH")
+  # Run metagenomeSeq
+  phenotypeData = AnnotatedDataFrame(meta_data)
+  obj = newMRexperiment(counts = feature_table, phenoData = phenotypeData, featureData = NULL)
   
-  res_test = ifelse(FDR < 0.05, 1, 0)
-  res_true = test_dat$diff_ind * 1
-  res_true[test_dat$zero_ind] = 1
-  res_true = res_true[rownames(feature_table)]
-  TP = sum(res_test[res_true == 1] == 1, na.rm = T)
-  FP = sum(res_test[res_true == 0] == 1, na.rm = T)
-  FN = sum(res_test[res_true == 1] == 0, na.rm = T)
-  FDR = FP/(TP + FP); power = TP/(TP + FN)
+  # Calculating normalization factors
+  obj = cumNorm(obj)
+  
+  # Zero-inflated Log-Gaussian mixture model
+  pd = pData(obj)
+  mod = model.matrix(~ group, data = pd)
+  
+  suppressWarnings(fit <- try(fitFeatureModel(obj, mod)))
+  if (inherits(fit, "try-error")) {
+    power = NA; FDR = NA
+  } else{
+    out = MRcoefs(fit, number = nrow(feature_table))
+    out = data.frame(taxa = rownames(out), FDR = out$adjPvalues)
+    out = out[match(rownames(feature_table), as.character(out$taxa)), ]
+    out$FDR[is.na(out$FDR)] = 1
+    
+    res_test = ifelse(out$FDR < 0.05, 1, 0)
+    res_true = test_dat$diff_ind * 1
+    res_true[test_dat$zero_ind] = 1
+    res_true = res_true[rownames(feature_table)]
+    TP = sum(res_test[res_true == 1] == 1, na.rm = T)
+    FP = sum(res_test[res_true == 0] == 1, na.rm = T)
+    FN = sum(res_test[res_true == 1] == 0, na.rm = T)
+    FDR = FP/(TP + FP); power = TP/(TP + FN)
+  }
   c(FDR, power)
 }
 
-write_csv(data.frame(simlist), "sim_fdr_power_wilcox2.csv")
+write_csv(data.frame(simlist), "sim_fdr_power_zilg_css.csv")

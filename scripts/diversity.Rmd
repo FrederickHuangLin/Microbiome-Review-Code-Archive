@@ -136,11 +136,12 @@ calculate_rarefaction_curves = function(psdata, measures, depths) {
 
 rarefaction_curve_data = calculate_rarefaction_curves(psdata = pseq, 
                                                       measures = c("chao1", "diversity_shannon"), 
-                                                      depths = rep(round(seq(1, max(sample_sums(pseq)), length.out = 20)), 
+                                                      depths = rep(round(seq(1, max(sample_sums(pseq)),
+                                                                             length.out = 20)), 
                                                                    each = 10))
 rarefaction_curve_data$depth = as.numeric(rarefaction_curve_data$depth)
 # Summarize alpha diversity
-rarefaction_curve_data_summary = rarefaction_curve_data%>%group_by(depth, sample, measure)%>%
+rarefaction_curve_data_summary = rarefaction_curve_data %>% group_by(depth, sample, measure) %>%
   summarise(alpha_diversity_mean = mean(alpha_diversity), alpha_diversity_sd = sd(alpha_diversity))
 
 # Add sample data
@@ -161,7 +162,7 @@ p = ggplot(data = p_df,
                group = sample)) + 
   labs(x = "Library Size", y = "Diversity") + 
   scale_color_discrete(name = NULL) +
-  geom_line() + geom_pointrange(alpha = 0.5) + 
+  geom_line(alpha = 0.5) + geom_pointrange(alpha = 0.5, size = 0.1) + 
   facet_wrap(facets = ~ measure, scales = 'free_y') + 
   theme_bw()+
   theme(plot.title = element_text(hjust = 0.5),

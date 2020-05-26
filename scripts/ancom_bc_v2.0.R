@@ -434,9 +434,7 @@ ANCOM_BC = function(feature_table, meta_data, sample_id, adj_formula, p_adj_meth
     
     # Directional test summary
     diff_direct = ifelse(q_direct < alpha, TRUE, FALSE)
-    beta_hat_direct = beta_hat_direct * screen_ind
-    se_hat_direct = sqrt(var_hat_direct * screen_ind)
-    W_direct = W_direct * screen_ind
+    se_hat_direct = sqrt(var_hat_direct)
     res_direct = list(beta = beta_hat_direct, se = se_hat_direct, W = W_direct, 
                       p_val = p_direct, q_val = q_direct, diff_abn = diff_direct)
     } else {
@@ -687,7 +685,7 @@ ANCOM_BC = function(feature_table, meta_data, sample_id, adj_formula, p_adj_meth
   if (struc_zero) {
     for (k in 1:length(group_all)) {
       k_ind = grepl(group_all[k], covariates)
-      zero_mask_k = 1 - zero_ind_all[[k]][, -1]
+      zero_mask_k = 1 - apply(zero_ind[[k]], 1, function(x) any(x == 1))
       res$p_val[, k_ind] = res$p_val[, k_ind] * zero_mask_k
       res$q_val[, k_ind] = res$q_val[, k_ind] * zero_mask_k
     }
@@ -696,7 +694,7 @@ ANCOM_BC = function(feature_table, meta_data, sample_id, adj_formula, p_adj_meth
     # Global test
     if (global) {
       for (k in 1:length(group)) {
-        zero_mask_k = 1 - apply(zero_ind[[k]][, -1], 1, function(x) any(x == 1))
+        zero_mask_k = 1 - apply(zero_ind[[k]], 1, function(x) any(x == 1))
         res_global$p_val[, k] = res_global$p_val[, k] * zero_mask_k
         res_global$q_val[, k] = res_global$q_val[, k] * zero_mask_k
       }
@@ -707,8 +705,9 @@ ANCOM_BC = function(feature_table, meta_data, sample_id, adj_formula, p_adj_meth
     if (direct) {
       if (dunnett) {
         for (k in 1:length(group)) {
-          k_ind = grepl(group[k], covariates)
-          zero_mask_k = 1 - zero_ind[[k]][, -1]
+          k_ind = grepl(group[k], colnames(res_direct$beta))
+          zero_mask_k = 1 - (zero_ind[[k]][, -1] - zero_ind[[k]][, 1]) # equals to 0, 1, 2
+          zero_mask_k[zero_mask_k == 2] = 0 
           res_direct$p_val[, k_ind] = res_direct$p_val[, k_ind] * zero_mask_k
           res_direct$q_val[, k_ind] = res_direct$q_val[, k_ind] * zero_mask_k
         }
@@ -716,9 +715,10 @@ ANCOM_BC = function(feature_table, meta_data, sample_id, adj_formula, p_adj_meth
       } else {
         for (k in 1:length(group)) {
           k_ind = grepl(group[k], colnames(res_direct$beta))
-          zero_mask_k = t(apply(zero_ind[[k]][, -1], 1, function(x) combn_fun(x, fun = diff)))
-          zero_mask_k[zero_mask_k != 0] = 1
+          zero_mask_k = t(apply(zero_ind[[k]], 1, function(x) combn_fun(x, fun = diff)))
+          zero_mask_k = zero_mask_k[, -(1:ncol(zero_ind[[k]]))]
           zero_mask_k = 1 - zero_mask_k
+          zero_mask_k[zero_mask_k ==2] = 0
           res_direct$p_val[, k_ind] = res_direct$p_val[, k_ind] * zero_mask_k
           res_direct$q_val[, k_ind] = res_direct$q_val[, k_ind] * zero_mask_k
         }

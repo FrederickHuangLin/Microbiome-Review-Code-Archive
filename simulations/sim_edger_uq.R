@@ -46,7 +46,7 @@ simlist = foreach(i = simparams_list, .combine = 'cbind',
   feature_table = round(countdata[which(taxa_info_ind < zero_threshold), ]) + 1L
   
   d = DGEList(counts = feature_table, group = meta_data$group)
-  d = calcNormFactors(d)
+  d = calcNormFactors(d, method = "upperquartile")
   design_mat = model.matrix(~ 0 + d$samples$group)
   colnames(design_mat) = levels(d$samples$group)
   
@@ -69,4 +69,4 @@ simlist = foreach(i = simparams_list, .combine = 'cbind',
   c(FDR, power)
 }
 
-write_csv(data.frame(simlist), "sim_fdr_power_edger.csv")
+write_csv(data.frame(simlist), "sim_fdr_power_edger_uq.csv")

@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include = FALSE}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA)
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA, fig.width = 9, fig.height = 6)
 
 library(tidyverse)
 library(DT)
@@ -20,7 +20,7 @@ source("data_generation.R")
 source("ancom_bc_v2.0.R")
 source("ancom_v2.1.R")
 
-gg_color_hue=function(n){
+gg_color_hue = function(n){
   hues = seq(15, 375, length = n + 1)
   hcl(h = hues, l = 65, c = 100)[1:n]
 }
@@ -90,10 +90,14 @@ if (inherits(dds, "try-error")){
 d_med = DESeq2::sizeFactors(dds)
 d_med = log(d_med)
 
+# Wrench
+W = Wrench::wrench(countdata, condition = meta_data$group)
+d_wrench = log(W$nf)
+
 # TSS: Total-sum scaling
 d_tss = colSums(countdata, na.rm = TRUE); d_tss = log(d_tss)
 
-norm_df = data.frame(d_true, d_ancom_bc, d_uq1, d_uq2, d_tmm1, d_tmm2, d_css, d_med, d_tss,
+norm_df = data.frame(d_true, d_ancom_bc, d_uq1, d_uq2, d_tmm1, d_tmm2, d_css, d_med, d_wrench, d_tss,
                      group = meta_data$group)
 norm_df = norm_df%>% mutate(diff_ancom_bc = scale(d_true - d_ancom_bc, scale = FALSE),
                             diff_uq1 = scale(d_true - d_uq1, scale = FALSE),
@@ -102,25 +106,25 @@ norm_df = norm_df%>% mutate(diff_ancom_bc = scale(d_true - d_ancom_bc, scale = F
                             diff_tmm2 = scale(d_true - d_tmm2, scale = FALSE),
                             diff_css = scale(d_true - d_css, scale = FALSE),
                             diff_med = scale(d_true - d_med, scale = FALSE),
-                            diff_css = scale(d_true - d_css, scale = FALSE),
+                            diff_wrench = scale(d_true - d_wrench, scale = FALSE),
                             diff_tss = scale(d_true - d_tss, scale = FALSE))
 
 # Making plot
 p_df = norm_df %>% gather(key = "method", value = "value", diff_ancom_bc:diff_tss)
 p_df$method = factor(p_df$method, 
-                     levels = c("diff_ancom_bc", "diff_uq1", "diff_tmm1", 
-                                "diff_uq2", "diff_tmm2", "diff_css", "diff_med", "diff_tss"))
+                     levels = c("diff_ancom_bc", "diff_uq1", "diff_tmm1", "diff_uq2", 
+                                "diff_tmm2", "diff_css", "diff_med", "diff_wrench", "diff_tss"))
 p_df$group = factor(p_df$group)
 norm_var = p_df %>% group_by(method) %>% 
   summarise(method_var = signif(var(value), 2))%>%
-  mutate(method_abb = c("ANCOM-BC", "ELib-UQ", "ELib-TMM", "UQ", "TMM", "CSS", "MED", "TSS"),
+  mutate(method_abb = c("ANCOM-BC", "ELib-UQ", "ELib-TMM", "UQ", "TMM", "CSS", "MED", "Wrench", "TSS"),
          label = paste0(method_abb, " (", method_var, ")"))
 p = ggplot(p_df, aes(x = method, y = value, fill = method))+ 
   geom_boxplot() + geom_hline(yintercept = 0, linetype = "dotted") +
   geom_jitter(color = "gray28", position = position_jitter(0.2), aes(shape = group), size = 1) +
   scale_fill_manual(name = NULL,
                     label = norm_var$label,
-                    values = gg_color_hue(8))+
+                    values = gg_color_hue(9))+
   scale_shape_manual(name = NULL, values = c(1, 4, 17))+
   labs(x = NULL, y = "Centered Residual") +
   theme_bw() +
@@ -131,8 +135,8 @@ p = ggplot(p_df, aes(x = method, y = value, fill = method))+
         legend.position = "bottom",
         legend.direction = "horizontal", legend.box = "vertical")
 p
-ggsave("../figures/sim_norm.jpeg", width = 9, height = 6, units = 'in', dpi = 300)
-ggsave("../figures/sim_norm.pdf", width = 9, height = 6, units = 'in')
+ggsave("../figures/sim_norm.jpeg", width = 8, height = 5.5, units = 'in', dpi = 300)
+ggsave("../figures/sim_norm.pdf", width = 8, height = 5.5, units = 'in')
 ```
 
 # 2. FDR and power
@@ -140,8 +144,8 @@ ggsave("../figures/sim_norm.pdf", width = 9, height = 6, units = 'in')
 ## 2.1 Simulation settings
 
 ```{r}
-n_taxa = 200; n_samp = 90
-x = data.frame(group = paste0("G", rep(1:3, each = n_samp/3))); type = "none"; group = "group"
+n_taxa = 200; n_samp = 60
+x = data.frame(group = paste0("G", rep(1:2, each = n_samp/2))); type = "none"; group = "group"
 prop_diff = c(0.05, 0.15, 0.25); zero_prop = 0.2; depth = "small"
 meta_data = data.frame(sample_id = paste0("sample", seq(n_samp)), x)
 
@@ -160,14 +164,17 @@ simparamslabels = c("prop_diff", "abn_seed", "obs_seed")
 ## 2.2 Read in simulation results
 
 ```{r}
+dat_aldex2 = read_csv("../data/fdr_power/sim_fdr_power_aldex2.csv")
 dat_ancom_bc = read_csv("../data/fdr_power/sim_fdr_power_ancom_bc.csv")
 dat_ancom = read_csv("../data/fdr_power/sim_fdr_power_ancom.csv")
-dat_deseq2 = read_csv("../data/fdr_power/sim_fdr_power_deseq2.csv")
-dat_edger = read_csv("../data/fdr_power/sim_fdr_power_edger.csv")
-dat_zilg = read_csv("../data/fdr_power/sim_fdr_power_zilg.csv")
-dat_zig = read_csv("../data/fdr_power/sim_fdr_power_zig.csv")
-dat_wilcox_un = read_csv("../data/fdr_power/sim_fdr_power_wilcox1.csv")
-dat_wilcox_tss = read_csv("../data/fdr_power/sim_fdr_power_wilcox2.csv")
+dat_deseq2_med = read_csv("../data/fdr_power/sim_fdr_power_deseq2_med.csv")
+dat_deseq2_wrench = read_csv("../data/fdr_power/sim_fdr_power_deseq2_wrench.csv")
+dat_edger_uq = read_csv("../data/fdr_power/sim_fdr_power_edger_uq.csv")
+dat_edger_tmm = read_csv("../data/fdr_power/sim_fdr_power_edger_tmm.csv")
+dat_zilg_css = read_csv("../data/fdr_power/sim_fdr_power_zilg_css.csv")
+dat_zig_css = read_csv("../data/fdr_power/sim_fdr_power_zig_css.csv")
+dat_wilcox_none = read_csv("../data/fdr_power/sim_fdr_power_wilcox_none.csv")
+dat_wilcox_tss = read_csv("../data/fdr_power/sim_fdr_power_wilcox_tss.csv")
 
 # Reshaping data
 simpattern = simparams %>% distinct(prop_diff)
@@ -185,10 +192,16 @@ data_summary = function(eval_data, method){
   return(data_sum)
 }
 
-eval_dat_list = list(dat_ancom_bc, dat_ancom, dat_deseq2, dat_edger, 
-                     dat_zilg, dat_zig, dat_wilcox_un, dat_wilcox_tss)
-method_list = list("ANCOM-BC", "ANCOM", "DESeq2", "edgeR", "ZILG", "ZIG", 
-                   "Wilcoxon", "Wilcoxon + TSS")
+eval_dat_list = list(dat_ancom_bc, dat_ancom, dat_aldex2, 
+                     dat_deseq2_med, dat_deseq2_wrench, 
+                     dat_edger_uq, dat_edger_tmm, 
+                     dat_zilg_css, dat_zig_css, 
+                     dat_wilcox_none, dat_wilcox_tss)
+method_list = list("ANCOM-BC", "ANCOM", "ALDEx2", 
+                   "DESeq2 (MED)", "DESeq2 (Wrench)", 
+                   "edgeR (Elib-UQ)", "edgeR (Elib-TMM)", 
+                   "ZILG (CSS)", "ZIG (CSS)", 
+                   "Wilcoxon (None)", "Wilcoxon (TSS)")
 
 dat_fig_list = vector(mode = "list", length = length(eval_dat_list))
 for (i in 1:length(eval_dat_list)) {
@@ -210,6 +223,12 @@ dat_fig_long1 = dat_fig %>%
 dat_fig_long2 = dat_fig %>% 
   transmute(measure = power, measureSD = powerSD, prop_diff, method, label = "Power")
 dat_fig_long = rbind(dat_fig_long1, dat_fig_long2)
+dat_fig_long$method = factor(dat_fig_long$method, 
+                             levels = c("ANCOM-BC", "ANCOM", "ALDEx2", 
+                                        "DESeq2 (MED)", "DESeq2 (Wrench)", 
+                                        "edgeR (Elib-UQ)", "edgeR (Elib-TMM)", 
+                                        "ZILG (CSS)", "ZIG (CSS)", 
+                                        "Wilcoxon (None)", "Wilcoxon (TSS)"))
 scales_y = list(
   `FDR` = scale_y_continuous(breaks = c(0.05, seq(0.2, 1, 0.2)), limits = c(0, 0.6)),
   `Power` = scale_y_continuous(breaks = seq(0, 1, 0.2), limits = c(0, 1))
@@ -221,7 +240,7 @@ p = ggplot(dat_fig_long, aes(x = prop_diff, y = measure, fill = method)) +
              aes(yintercept = yint), linetype = "dashed") + 
   geom_bar(stat = "identity", position = position_dodge(), color = "black") +
   labs(x = "Proportion of Differentially Abundant Taxa", y = NULL, fill = NULL) +
-  scale_fill_brewer(palette = "Set2")+
+  scale_fill_brewer(palette = "Set3")+
   theme_bw()+
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank(), 

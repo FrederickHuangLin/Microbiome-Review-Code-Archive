@@ -1,13 +1,13 @@
 library(tidyverse)
 library(doParallel)
 library(foreach)
+library(ALDEx2)
 
 detectCores()
 myCluster = makeCluster(4, type = "FORK")
 registerDoParallel(myCluster)
 
 source("data_generation.R")
-source("ancom_v2.1.R")
 
 n_taxa = 200; n_samp = 60
 x = data.frame(group = paste0("G", rep(1:2, each = n_samp/2))); type = "none"; group = "group"
@@ -26,7 +26,7 @@ simparams_list = apply(simparams, 1, paste0, collapse = "_")
 simparamslabels = c("prop_diff", "abn_seed", "obs_seed")
 
 simlist = foreach(i = simparams_list, .combine = 'cbind', 
-                  .packages = c("nlme", "compositions")) %dopar% {
+                  .packages = c("metagenomeSeq")) %do% {
   # i = simparams_list[[1]]
   print(i)
   params = strsplit(i, "_")[[1]]
@@ -40,32 +40,32 @@ simlist = foreach(i = simparams_list, .combine = 'cbind',
   # Data generation
   test_dat = abn_tab_gen(n_taxa, n_samp, x, type, group, prop_diff,
                          abn_seed, obs_seed, zero_prop, depth)
-  obs_abn = test_dat$obs_abn
   
-  # Run ANCOM-BC
-  feature_table = obs_abn; sample_var = "sample_id"; group_var = "group"
-  out_cut = 0; zero_cut = 0.90; lib_cut = 0; neg_lb = FALSE
-  prepro = feature_table_pre_process(feature_table, meta_data, sample_var, group_var, 
-                                     out_cut, zero_cut, lib_cut, neg_lb)
-  feature_table = prepro$feature_table # Preprocessed feature table
-  meta_data = prepro$meta_data # Preprocessed metadata
-  struc_zero = prepro$structure_zeros # Structural zero info
+  # Prepare data
+  countdata = test_dat$obs_abn
+  rownames(meta_data) = meta_data$sample_id
   
-  main_var = "group"; p_adj_method = "holm"; alpha = 0.05
-  adj_formula = NULL; rand_formula = NULL
-  out = ANCOM(feature_table, meta_data, struc_zero, main_var, p_adj_method, 
-              alpha, adj_formula, rand_formula)
+  zero_threshold = 0.90
+  taxa_info_ind = apply(countdata, 1, function(x) sum(x == 0)/n_samp)
+  feature_table = round(countdata[which(taxa_info_ind < zero_threshold), ]) + 1L
   
-  res_test = out$out$detected_0.7 * 1
-  res_true = test_dat$diff_ind * 1
-  res_true[test_dat$zero_ind] = 1
-  res_true = res_true[rownames(feature_table)]
-  TP = sum(res_test[res_true == 1] == 1, na.rm = T)
-  FP = sum(res_test[res_true == 0] == 1, na.rm = T)
-  FN = sum(res_test[res_true == 1] == 0, na.rm = T)
-  FDR = FP/(TP + FP); power = TP/(TP + FN)
+  # Run ALDEx2
+  suppressWarnings(fit <- try(aldex(reads = feature_table, conditions = meta_data$group, 
+                                    mc.samples = 128, test = "t", effect = FALSE,
+                                    include.sample.summary = FALSE, denom = "all", verbose = FALSE)))
+  if (inherits(fit, "try-error")) {
+    power = NA; FDR = NA
+  } else{
+    res_test = ifelse(fit$we.eBH < 0.05, 1, 0)
+    res_true = test_dat$diff_ind * 1
+    res_true[test_dat$zero_ind] = 1
+    res_true = res_true[rownames(feature_table)]
+    TP = sum(res_test[res_true == 1] == 1, na.rm = T)
+    FP = sum(res_test[res_true == 0] == 1, na.rm = T)
+    FN = sum(res_test[res_true == 1] == 0, na.rm = T)
+    FDR = FP/(TP + FP); power = TP/(TP + FN)
+  }
   c(FDR, power)
 }
 
-stopCluster(myCluster)
-write_csv(data.frame(simlist), "sim_fdr_power_ancom.csv")
+write_csv(data.frame(simlist), "sim_fdr_power_aldex2.csv")

@@ -1,6 +1,7 @@
 library(tidyverse)
 library(doParallel)
 library(foreach)
+library(edgeR)
 
 source("data_generation.R")
 
@@ -20,7 +21,8 @@ simparams = simparams %>% mutate(obs_seed = abn_seed + 1) %>% arrange(prop_diff,
 simparams_list = apply(simparams, 1, paste0, collapse = "_")
 simparamslabels = c("prop_diff", "abn_seed", "obs_seed")
 
-simlist = foreach(i = simparams_list, .combine = 'cbind') %do% {
+simlist = foreach(i = simparams_list, .combine = 'cbind', 
+                  .packages = c("edgeR")) %do% {
   # i = simparams_list[[1]]
   print(i)
   params = strsplit(i, "_")[[1]]
@@ -43,12 +45,20 @@ simlist = foreach(i = simparams_list, .combine = 'cbind') %do% {
   taxa_info_ind = apply(countdata, 1, function(x) sum(x == 0)/n_samp)
   feature_table = round(countdata[which(taxa_info_ind < zero_threshold), ]) + 1L
   
-  # Run wilcoxon test
-  p_val = apply(feature_table, 1, function(x) 
-    wilcox.test(x[1:(n_samp/2)], x[(n_samp/2 + 1):n_samp])$p.value)
-  FDR = p.adjust(p_val, method = "BH")
+  d = DGEList(counts = feature_table, group = meta_data$group)
+  d = calcNormFactors(d, method = "TMM")
+  design_mat = model.matrix(~ 0 + d$samples$group)
+  colnames(design_mat) = levels(d$samples$group)
   
-  res_test = ifelse(FDR < 0.05, 1, 0)
+  d = estimateDisp(d, design_mat)
+  fit = glmQLFit(d, design_mat)
+  qlf = glmQLFTest(fit, contrast = c(1, -1))
+  out = data.frame(taxa = rownames(topTags(qlf, n = nrow(countdata))$table), 
+                   FDR = topTags(qlf, n = nrow(countdata))$table$FDR)
+  out = out[match(rownames(countdata), as.character(out$taxa)), ]
+  out$FDR[is.na(out$FDR)] = 1
+  
+  res_test = ifelse(out$FDR < 0.05, 1, 0)
   res_true = test_dat$diff_ind * 1
   res_true[test_dat$zero_ind] = 1
   res_true = res_true[rownames(feature_table)]
@@ -59,4 +69,4 @@ simlist = foreach(i = simparams_list, .combine = 'cbind') %do% {
   c(FDR, power)
 }
 
-write_csv(data.frame(simlist), "sim_fdr_power_wilcox1.csv")
+write_csv(data.frame(simlist), "sim_fdr_power_edger_tmm.csv")
