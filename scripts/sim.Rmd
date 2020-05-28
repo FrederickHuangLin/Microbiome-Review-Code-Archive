@@ -199,7 +199,7 @@ eval_dat_list = list(dat_ancom_bc, dat_ancom, dat_aldex2,
                      dat_wilcox_none, dat_wilcox_tss)
 method_list = list("ANCOM-BC", "ANCOM", "ALDEx2", 
                    "DESeq2 (MED)", "DESeq2 (Wrench)", 
-                   "edgeR (Elib-UQ)", "edgeR (Elib-TMM)", 
+                   "edgeR (ELib-UQ)", "edgeR (ELib-TMM)", 
                    "ZILG (CSS)", "ZIG (CSS)", 
                    "Wilcoxon (None)", "Wilcoxon (TSS)")
 
@@ -226,7 +226,7 @@ dat_fig_long = rbind(dat_fig_long1, dat_fig_long2)
 dat_fig_long$method = factor(dat_fig_long$method, 
                              levels = c("ANCOM-BC", "ANCOM", "ALDEx2", 
                                         "DESeq2 (MED)", "DESeq2 (Wrench)", 
-                                        "edgeR (Elib-UQ)", "edgeR (Elib-TMM)", 
+                                        "edgeR (ELib-UQ)", "edgeR (ELib-TMM)", 
                                         "ZILG (CSS)", "ZIG (CSS)", 
                                         "Wilcoxon (None)", "Wilcoxon (TSS)"))
 scales_y = list(

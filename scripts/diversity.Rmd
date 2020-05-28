@@ -7,16 +7,11 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA)
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA, fig.width = 6.25, fig.height = 5)
 
 library(microbiome)
 library(tidyverse)
 library(ape)
-library(ggpubr)
-library(DT)
-options(DT.options = list(
-  initComplete = JS("function(settings, json) {",
-  "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});","}")))
 ```
 
 # 1. Load Example Data
@@ -41,77 +36,7 @@ otu_absolute = abundances(pseq)
 otu_relative = abundances(pseq, "compositional")
 ```
 
-# 2. Alpha diversities
-
-```{r, message=FALSE, warning=FALSE, comment=NA, results='hide'}
-alpha_tab = alpha(pseq, index = "all")
-# To get PD
-library(picante)
-alpha_tab$pd = pd(samp = t(otu_absolute), tree = random_tree)$PD
-p_df = alpha_tab%>%select(observed, chao1, diversity_shannon, diversity_gini_simpson, pd)
-colnames(p_df) = c("Observed Species", "Chao1", "Shannon", "Gini-Simpson", "PD")
-
-library(GGally)
-p = ggpairs(p_df, aes(alpha = 0.4))
-```
-
-```{r, message=FALSE, warning=FALSE, comment=NA}
-p
-ggsave("../figures/alpha_corr.jpeg", width=7, height=7, units='in', dpi = 300)
-ggsave("../figures/alpha_corr.pdf", width=7, height=7, units='in')
-```
-
-# 3. Beta diversities
-
-```{r, message=FALSE, warning=FALSE, comment=NA, results='hide'}
-set.seed(1234)
-pseq_rarified = rarefy_even_depth(pseq)
-
-# unlist(distanceMethodList)
-dist_methods = c("bray", "jaccard", "unifrac", "wunifrac")
-plist = vector("list", length(dist_methods))
-names(plist) = dist_methods
-for(i in dist_methods){
-  # Calculate distance matrix
-  iDist = distance(pseq_rarified, method = i)
-  # Calculate ordination
-  iMDS  = ordinate(pseq_rarified, "MDS", distance = iDist)
-  ## Make plot
-  # Don't carry over previous plot (if error, p will be blank)
-  p = NULL
-  # Create plot, store as temp variable, p
-  p = plot_ordination(pseq_rarified, iMDS, color = "nationality")
-  # Save the graphic to file.
-  plist[[i]] = p
-}
-
-p_df = plist%>%map_dfr(function(x) x$data, .id = "distance")
-p_df$distance = recode(p_df$distance, 
-                       bray = "Bray-Curtis", 
-                       jaccard = "Jaccard", 
-                       unifrac = "Unweighted UniFrac", 
-                       wunifrac = "Weighted UniFrac")
-p_df$nationality = recode(p_df$nationality,
-                          AAM = "African American",
-                          AFR = "Native African")
-p = ggplot(p_df, aes(Axis.1, Axis.2, color=nationality)) + 
-  geom_point(size=3, alpha=0.5) + 
-  labs(x = "Coordinate 1", y = "Coordinate 2") + 
-  scale_color_discrete(name = NULL)+
-  facet_wrap(~distance, scales="free") + 
-  theme_bw()+
-  theme(plot.title = element_text(hjust = 0.5),
-        strip.background = element_rect(fill = "white"),
-        legend.position = "bottom")
-```
-
-```{r, message=FALSE, warning=FALSE, comment=NA}
-p
-ggsave("../figures/beta_pcoa.jpeg", width=6.25, height=5, units='in', dpi = 300)
-ggsave("../figures/beta_pcoa.pdf", width=6.25, height=5, units='in')
-```
-
-# 4. Rarefaction curve
+# 2. Rarefaction curve
 
 ```{r, message=FALSE, warning=FALSE, comment=NA, results='hide'}
 # Calculate alpha diversity
@@ -174,113 +99,6 @@ p = ggplot(data = p_df,
 p
 ggsave("../figures/alpha_rare.jpeg", width=6.25, height=5, units='in', dpi = 300)
 ggsave("../figures/alpha_rare.pdf", width=6.25, height=5, units='in')
-```
-
-# 5. Rao's Quadratic Entropy
-
-```{r}
-# Load global gut data
-# Metadata
-meta_data = read_tsv("../data/global_gut_metadata.txt")
-meta_data = meta_data %>% 
-  transmute(sampleid = `#SampleID`, age = as.numeric(AGE), 
-            age_group = ifelse(age <= 2, "Age \u2264 2 years old", "Age > 2 years old"),
-            age_quant = cut(age, breaks = quantile(age, na.rm = T)),
-            sex = SEX, country = COUNTRY)%>%
-  arrange(sampleid)
-meta_data = meta_data[-nrow(meta_data), ] # The last row is non-informative
-meta_data$age_quant = recode(meta_data$age_quant, 
-                             `(0.03,2]` = "Age \u2264 2", 
-                             `(2,15]` = "2 < Age \u2264 15", 
-                             `(15,33]` = "15 < Age \u2264 33",
-                             `(33,83.2]` = "33 < Age \u2264 84")
-meta_data$country = recode(meta_data$country, `GAZ:Malawi` = "MA", 
-                           `GAZ:United States of America` = "US", `GAZ:Venezuela` = "VEN")
-meta_data$country = factor(meta_data$country, levels = c("MA", "US", "VEN"))
-meta_data$sex = factor(meta_data$sex, levels = c("female", "male"))
-meta_data$age_group = factor(meta_data$age_group, 
-                             levels = c("Age \u2264 2 years old", "Age > 2 years old"))
-rownames(meta_data) = meta_data$sampleid # MANCOM-BC requires an id column
-
-# Taxonomy
-tax = read_tsv("../data/global_gut_taxonomy.txt") %>% arrange(OTU_ID)
-otu_id = tax$OTU_ID
-tax = data.frame(tax[, -1], row.names = otu_id)
-tax = apply(tax, 2, function(x) sapply(x, function(y) strsplit(y, "__")[[1]][2]))
-tax = as.matrix(tax)
-
-# OTU table
-otu_table = read_tsv("../data/global_gut_otu.txt")
-otu_table = otu_table[, -ncol(otu_table)] # The last column is taxonomy
-otu_id = otu_table$OTU_ID
-otu_table = data.frame(otu_table[, -1], check.names = FALSE, row.names = otu_id)
-otu_table = as.matrix(otu_table)
-
-# OTU data
-otu_data = phyloseq(otu_table(otu_table, taxa_are_rows = TRUE), 
-                    sample_data(meta_data), tax_table(tax))
-# Aggregate to phylum level
-phylum_data = aggregate_taxa(otu_data, "Phylum")
-phylum_ma = subset_samples(phylum_data, country == "MA")
-phylum_us = subset_samples(phylum_data, country == "US")
-phylum_ven = subset_samples(phylum_data, country == "VEN")
-```
-
-## 5.1 SST, SSW, and SSB
-
-```{r}
-n_taxa = ntaxa(phylum_data)
-
-p_ma = rowSums(abundances(phylum_ma)); p_ma = p_ma/sum(p_ma)
-p_us = rowSums(abundances(phylum_us)); p_us = p_us/sum(p_us)
-p_ven = rowSums(abundances(phylum_ven)); p_ven = p_ven/sum(p_ven)
-
-n_all = meta(phylum_data) %>% group_by(country) %>% summarise(n = n())
-n_ma = n_all %>% filter(country == "MA") %>% .$n
-n_us = n_all %>% filter(country == "US") %>% .$n
-n_ven = n_all %>% filter(country == "VEN") %>% .$n
-n_total = sum(n_ma, n_us, n_ven)
-
-p_average = (n_ma * p_ma + n_us * p_us + n_ven * p_ven) / n_total
-p_average = matrix(p_average, ncol = 1)
-
-delta = 1 - diag(1, nrow = n_taxa)
-
-sst = as.numeric(t(p_average) %*% delta %*% p_average)
-ssw = (n_ma / n_total) * as.numeric(t(p_ma) %*% delta %*% p_ma) +
-  (n_us / n_total) * as.numeric(t(p_us) %*% delta %*% p_us) +
-  (n_ven / n_total) * as.numeric(t(p_ven) %*% delta %*% p_ven)
-ssb = sst - ssw
-
-test_stat = (3 - 1) * (n_total - 1) * ssb / sst
-p_val = 2 * min(pchisq(test_stat, df = (3 - 1) * n_taxa, lower.tail = TRUE),
-                pchisq(test_stat, df = (3 - 1) * n_taxa, lower.tail = FALSE))
-res = data.frame(SST = sst, SSW = ssw, SSB = ssb, 
-                 `Test Statistic` = test_stat, `P-Value`= p_val, check.names = FALSE)
-res %>% datatable() %>% 
-  formatRound(columns = c("SST", "SSW", "SSB", "Test Statistic", "P-Value"), digits = 3)
-```
-
-## 5.2 Visualization
-
-```{r}
-d_alpha = alpha(phylum_data, index = "diversity_gini_simpson")
-dat_fig = data.frame(d = d_alpha$diversity_gini_simpson,
-                     country = meta(phylum_data)$country)
-dat_ann = data.frame(x = 2.2, y = 1.01 * max(dat_fig$d), p = p_val)
-dat_ann = dat_ann%>%mutate(label = ifelse(p < 0.001, "p < 0.001", paste0("p = ", signif(p, 2))))
-
-p = ggplot(data = dat_fig, aes(x = country, y = d)) + geom_boxplot() +
-  scale_y_continuous(limits = c(min(dat_fig$d), 1.1 * max(dat_fig$d))) + 
-  geom_jitter(shape=16, position=position_jitter(0.2)) + 
-  geom_label(data = dat_ann, aes(x = x, y = y, label = label), 
-             size = 4, vjust = -0.5, hjust = 0, color = "orange") + 
-  labs(y = "Gini simpson index") + 
-  theme_bw() + 
-  theme(strip.background = element_rect(fill = "white"), legend.position = "top")
-p
-ggsave("../figures/gut_rao.jpeg", width=6.25, height=5, units='in', dpi = 300)
-ggsave("../figures/gut_rao.pdf", width=6.25, height=5, units='in')
 ```
 
 # Session information
