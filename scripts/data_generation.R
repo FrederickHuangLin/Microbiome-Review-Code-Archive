@@ -93,7 +93,7 @@ abn_tab_gen = function(n_taxa, n_samp, x, type = NULL, group = NULL, prop_diff,
   std = sqrt(1/exp(b0))
   names(std) = paste0("taxon", 1:n_taxa)
   
-  # Log absoulte abundance in the ecosystem
+  # Log absolute abundance in the ecosystem
   log_abn_mat = matrix(NA, ncol = n_samp, nrow = n_taxa)
   for (i in 1:n_taxa) {
     log_abn_mat[i, ] = x_expand %*% b[i, ] + rnorm(n_samp, mean = 0, sd = std[i])

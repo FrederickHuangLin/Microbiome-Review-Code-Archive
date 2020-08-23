@@ -7,7 +7,7 @@ myCluster = makeCluster(4, type = "FORK")
 registerDoParallel(myCluster)
 
 source("data_generation.R")
-source("ancom_bc_v2.0.R")
+source("ancom_bc.R")
 
 n_taxa = 200; n_samp = 60
 x = data.frame(group = paste0("G", rep(1:2, each = n_samp/2))); type = "none"; group = "group"

@@ -1,5 +1,5 @@
 ---
-title: "Illustration on Alpha/Beta Diversities, and Rao's Quadratic Entropy"
+title: "Illustration on Rarefaction Curve"
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output:
   html_document: default
@@ -12,6 +12,8 @@ knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA, fig.width 
 library(microbiome)
 library(tidyverse)
 library(ape)
+library(magrittr)
+library(qwraps2)
 ```
 
 # 1. Load Example Data
@@ -29,12 +31,19 @@ taxonomy = tax_table(pseq)
 random_tree = rtree(n = n_taxa, rooted = TRUE, tip.label = taxa(pseq))
 # plot(random_tree)
 pseq = merge_phyloseq(pseq, random_tree)
-pseq
 # Absolute abundances
 otu_absolute = abundances(pseq)
 # Relative abundances
 otu_relative = abundances(pseq, "compositional")
 ```
+
+1. Number of genera: `r n_taxa`
+
+2. Number of samples: `r n_samp`
+
+    + African American: `r table(meta_data$nationality)["AAM"]`
+    
+    + Native African: `r table(meta_data$nationality)["AFR"]`
 
 # 2. Rarefaction curve
 

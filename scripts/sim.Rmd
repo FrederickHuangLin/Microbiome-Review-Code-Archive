@@ -17,7 +17,7 @@ options(DT.options = list(
   "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});","}")))
 
 source("data_generation.R")
-source("ancom_bc_v2.0.R")
+source("ancom_bc.R")
 source("ancom_v2.1.R")
 
 gg_color_hue = function(n){
@@ -28,7 +28,7 @@ gg_color_hue = function(n){
 
 # 1. Normalization efficacy
 
-```{r}
+```{r eval=FALSE}
 # Simulated dataset
 n_taxa = 200; n_samp = 90
 x = data.frame(group = paste0("G", rep(1:3, each = n_samp/3))); type = "simple"; group = "group"
@@ -117,21 +117,28 @@ p_df$method = factor(p_df$method,
 p_df$group = factor(p_df$group)
 norm_var = p_df %>% group_by(method) %>% 
   summarise(method_var = signif(var(value), 2))%>%
-  mutate(method_abb = c("ANCOM-BC", "ELib-UQ", "ELib-TMM", "UQ", "TMM", "CSS", "MED", "Wrench", "TSS"),
-         label = paste0(method_abb, " (", method_var, ")"))
-p = ggplot(p_df, aes(x = method, y = value, fill = method))+ 
+  mutate(method_abb = c("ANCOM-BC", "ELib-UQ", "ELib-TMM", "UQ", 
+                        "TMM", "CSS", "MED", "Wrench", "TSS"),
+         label = paste0(method_abb, "\n(", method_var, ")"))
+p_df = p_df %>% left_join(norm_var, by = "method")
+write_csv(p_df, "../data/norm/sim_norm.csv")
+```
+
+```{r}
+p_df = read_csv("../data/norm/sim_norm.csv")
+p = ggplot(p_df, aes(x = '', y = value, fill = label))+ 
   geom_boxplot() + geom_hline(yintercept = 0, linetype = "dotted") +
+  facet_grid(.~label, scales = "fixed") +
   geom_jitter(color = "gray28", position = position_jitter(0.2), aes(shape = group), size = 1) +
-  scale_fill_manual(name = NULL,
-                    label = norm_var$label,
-                    values = gg_color_hue(9))+
   scale_shape_manual(name = NULL, values = c(1, 4, 17))+
   labs(x = NULL, y = "Centered Residual") +
   theme_bw() +
+  guides(fill = FALSE) +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         axis.ticks.x=element_blank(),
         axis.text.x = element_blank(),
+        strip.background = element_rect(fill = "white"),
         legend.position = "bottom",
         legend.direction = "horizontal", legend.box = "vertical")
 p
@@ -237,7 +244,9 @@ scales_y = list(
 p = ggplot(dat_fig_long, aes(x = prop_diff, y = measure, fill = method)) +
   coord_flip() + facet_grid(.~ label, scales = "free") +
   geom_hline(data = data.frame(yint = 0.05, label = "FDR"), 
-             aes(yintercept = yint), linetype = "dashed") + 
+             aes(yintercept = yint), linetype = "solid") +
+  geom_hline(yintercept = 0.05 + sqrt(0.05*0.95/100), linetype = "dashed", 
+             color="black", size = 0.2)+
   geom_bar(stat = "identity", position = position_dodge(), color = "black") +
   labs(x = "Proportion of Differentially Abundant Taxa", y = NULL, fill = NULL) +
   scale_fill_brewer(palette = "Set3")+
